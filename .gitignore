@@ -1,0 +1,47 @@
+# ====================================================================
+# TERRAFORM
+# ====================================================================
+# Local .terraform directory (where provider binaries live)
+**/.terraform/*
+
+# Ignore all .tfstate files (very important: prevents leaking secrets)
+*.tfstate
+*.tfstate.*
+
+# Ignore variable files (likely containing secrets)
+*.tfvars
+*.tfvars.json
+
+# Ignore lock info files from plan/apply
+.terraform.tfstate.lock.info
+
+# Ignore plan files (can contain sensitive info)
+*tfplan*
+
+# ====================================================================
+# ANSIBLE
+# ====================================================================
+*.retry
+.ansible/
+
+# If you use Ansible Vault password files
+.vault_pass
+
+# ====================================================================
+# OS / IDE (VS Code)
+# ====================================================================
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+
+# System Files
+.DS_Store
+Thumbs.db
+
+# ====================================================================
+# PROJECT SPECIFIC
+# ====================================================================
+# Ignore any temporary log files
+*.log
