@@ -143,8 +143,23 @@ az storage container create --name tfstate --account-name stlinodevstate001 --su
 ## Terraform
 
 ### Local deployment
+Ubuntu: Install Azure cli and terraform
+```bash
+# Azure cli
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 
-```powershell
+az version
+
+az login --use-device-code
+
+# Terraform
+wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor | sudo tee /usr/share/keyrings/hashicorp-archive-keyring.gpg > /dev/null && echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/hashicorp.list && sudo apt-get update && sudo apt-get install -y terraform
+
+terraform -version
+```
+
+Deploy
+```bash
 terraform init
 
 terraform plan
@@ -157,4 +172,22 @@ terraform destroy -target="azurerm_resource_group.infra" -target="azurerm_resour
 Get DC admin password
 ```azurecli
 az keyvault secret show --name "identity-dc01-admin-pwd" --vault-name "kv-lino-dev-westeu-001" --query value -o tsv
+```
+
+# Azure dsc
+
+Import modules in the dcs folder
+
+Open PowerShell
+```powershell
+cd \\wsl.localhost\Ubuntu\home\lino\lino-dev-azure-infrastack\terraform\dsc
+
+New-Item -Path ".\modules" -ItemType Directory -Force
+
+Save-Module -Name ActiveDirectoryDsc -Path ".\modules"
+Save-Module -Name xDnsServer -Path ".\modules"
+
+Move-Item ".\modules\ActiveDirectoryDsc\6.7.1\*" ".\modules\ActiveDirectoryDsc\" -Force
+Move-Item ".\modules\xDnsServer\2.0.0\*" ".\modules\xDnsServer\" -Force
+Remove-Item ".\modules\ActiveDirectoryDsc\6.7.1", ".\modules\xDnsServer\2.0.0" -Recurse -Force
 ```
