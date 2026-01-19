@@ -1,18 +1,13 @@
-# Create the User-Assigned Identity
+# --- Domain Controller Identity ---
+
 resource "azurerm_user_assigned_identity" "dc_identity" {
   name                = "id-lino-dc-dev"
   location            = azurerm_resource_group.infra.location
   resource_group_name = azurerm_resource_group.infra.name
 }
 
-# Grant the Identity "Reader" access to the Storage Account
-resource "azurerm_role_assignment" "storage_reader" {
-  scope                = azurerm_storage_account.bootstrap.id
-  role_definition_name = "Storage Blob Data Reader"
-  principal_id         = azurerm_user_assigned_identity.dc_identity.principal_id
-}
+# --- Domain Controller Network Interface ---
 
-# VM DC Network Interface
 resource "azurerm_network_interface" "dc_nic" {
   name                = "nic-lino-dc01-dev"
   location            = azurerm_resource_group.infra.location
@@ -24,9 +19,12 @@ resource "azurerm_network_interface" "dc_nic" {
     private_ip_address_allocation = "Static"
     private_ip_address            = "10.0.1.4"
   }
+
+  tags = var.tags
 }
 
-# VM DC
+# --- Domain Controller Virtual Machine ---
+
 resource "azurerm_windows_virtual_machine" "dc01" {
   name                = "vm-lino-dc01"
   resource_group_name = azurerm_resource_group.infra.name
@@ -34,8 +32,9 @@ resource "azurerm_windows_virtual_machine" "dc01" {
   size                = "Standard_B2s"
   admin_username      = "linoadmin"
   admin_password      = azurerm_key_vault_secret.admin_password.value
-
-  network_interface_ids = [azurerm_network_interface.dc_nic.id]
+  network_interface_ids = [
+    azurerm_network_interface.dc_nic.id
+  ]
 
   identity {
     type         = "UserAssigned"
@@ -43,6 +42,7 @@ resource "azurerm_windows_virtual_machine" "dc01" {
   }
 
   os_disk {
+    name                 = "osdisk-lino-dc01"
     caching              = "ReadWrite"
     storage_account_type = "StandardSSD_LRS"
   }
@@ -53,44 +53,87 @@ resource "azurerm_windows_virtual_machine" "dc01" {
     sku       = "2022-Datacenter"
     version   = "latest"
   }
-}
 
-# DSC Extension Configuration
-resource "azurerm_virtual_machine_extension" "dsc" {
-  name                 = "Microsoft.Powershell.DSC"
-  virtual_machine_id   = azurerm_windows_virtual_machine.dc01.id
-  publisher            = "Microsoft.Powershell"
-  type                 = "DSC"
-  type_handler_version = "2.83"
-
-  settings = <<SETTINGS
-    {
-        "configuration": {
-            "url": "${azurerm_storage_blob.dsc_blob.url}${data.azurerm_storage_account_sas.bootstrap_sas.sas}",
-            "script": "ActiveDirectory.ps1",
-            "function": "ActiveDirectoryConfig"
-        },
-        "configurationArguments": {
-            "SafeModeCredential": {
-                "userName": "linoadmin",
-                "password": "PrivateSettingsRef:SafeModePassword" 
-            }
-        }
-    }
-SETTINGS
-
-  protected_settings = <<PROTECTED_SETTINGS
-    {
-      "items": {
-        "SafeModePassword": "${azurerm_key_vault_secret.admin_password.value}"
-      }
-    }
-PROTECTED_SETTINGS
-
-  timeouts {
-    create = "60m"
-    update = "60m"
+  lifecycle {
+    ignore_changes = [
+      admin_password
+    ]
   }
 
-  depends_on = [azurerm_storage_blob.dsc_blob]
+  tags = merge(var.tags, {
+    Role = "DomainController"
+  })
+}
+
+# --- Upload PowerShell Script to Storage Account ---
+
+resource "azurerm_storage_account" "scripts" {
+  name                     = "stlinoscripts${random_string.storage_suffix.result}"
+  resource_group_name      = azurerm_resource_group.infra.name
+  location                 = azurerm_resource_group.infra.location
+  account_tier             = "Standard"
+  account_replication_type = "LRS"
+  
+  tags = var.tags
+}
+
+resource "random_string" "storage_suffix" {
+  length  = 6
+  special = false
+  upper   = false
+}
+
+resource "azurerm_storage_container" "scripts" {
+  name                  = "scripts"
+  storage_account_name  = azurerm_storage_account.scripts.name
+  container_access_type = "private"
+}
+
+resource "azurerm_storage_blob" "ad_install_script" {
+  name                   = "Install-ActiveDirectory.ps1"
+  storage_account_name   = azurerm_storage_account.scripts.name
+  storage_container_name = azurerm_storage_container.scripts.name
+  type                   = "Block"
+  source                 = "${path.module}/scripts/Install-ActiveDirectory.ps1"
+}
+
+data "azurerm_storage_account_blob_container_sas" "scripts" {
+  connection_string = azurerm_storage_account.scripts.primary_connection_string
+  container_name    = azurerm_storage_container.scripts.name
+  https_only        = true
+
+  start  = timestamp()
+  expiry = timeadd(timestamp(), "24h")
+
+  permissions {
+    read   = true
+    add    = false
+    create = false
+    write  = false
+    delete = false
+    list   = true
+  }
+}
+
+# --- Custom Script Extension for AD Installation ---
+
+resource "azurerm_virtual_machine_extension" "ad_install" {
+  name                       = "InstallActiveDirectory"
+  virtual_machine_id         = azurerm_windows_virtual_machine.dc01.id
+  publisher                  = "Microsoft.Compute"
+  type                       = "CustomScriptExtension"
+  type_handler_version       = "1.10"
+  auto_upgrade_minor_version = true
+
+  settings = jsonencode({
+    fileUris = [
+      "${azurerm_storage_blob.ad_install_script.url}${data.azurerm_storage_account_blob_container_sas.scripts.sas}"
+    ]
+  })
+
+  protected_settings = jsonencode({
+    commandToExecute = "powershell -ExecutionPolicy Unrestricted -File Install-ActiveDirectory.ps1"
+  })
+
+  tags = var.tags
 }

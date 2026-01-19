@@ -27,7 +27,7 @@ resource "azurerm_virtual_network_dns_servers" "dc_dns" {
   virtual_network_id = azurerm_virtual_network.hub.id
   dns_servers        = ["10.0.1.4", "168.63.129.16"] # DC and Azure provided DNS
 
-  depends_on = [azurerm_virtual_machine_extension.dsc]
+  depends_on = [azurerm_virtual_machine_extension.ad_install]
 }
 
 # --- Networking VNET Workload ---
@@ -58,7 +58,7 @@ resource "azurerm_virtual_network_dns_servers" "workload_dns" {
   virtual_network_id = azurerm_virtual_network.workload.id
   dns_servers        = ["10.0.1.4", "168.63.129.16"] # DC and Azure provided DNS
 
-  depends_on = [azurerm_virtual_machine_extension.dsc]
+  depends_on = [azurerm_virtual_machine_extension.ad_install]
 }
 
 # --- Networking Peering  ---
